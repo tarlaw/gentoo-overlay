@@ -1,0 +1,11 @@
+<repositories encoding="unicode" version="1.1">
+  <repo priority="50" quality="experimental">
+    <name>tarlaw</name>
+    <description>Echo Lee's personal Gentoo overlay.</description>
+    <owner>
+      <email>echolee.lua@gmail.com</email>
+      <name>Echo Lee</name>
+    </owner>
+    <source type="git">git@github.com:tarlaw/gentoo-overlay.git</source>
+  </repo>
+</repositories>
