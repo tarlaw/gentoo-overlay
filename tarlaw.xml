@@ -6,6 +6,6 @@
       <email>echolee.lua@gmail.com</email>
       <name>Echo Lee</name>
     </owner>
-    <source type="git">git@github.com:tarlaw/gentoo-overlay.git</source>
+    <source type="git">https://github.com/tarlaw/gentoo-overlay.git</source>
   </repo>
 </repositories>
