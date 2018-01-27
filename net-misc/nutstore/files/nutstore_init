@@ -25,7 +25,8 @@ mkdir -p $MENU_DIR && cp $BASE_DIR/gnome-config/menu/*.desktop $MENU_DIR || exit
 
 mkdir -p $ICON_DIR && cp $BASE_DIR/app-icon/nutstore.png $ICON_DIR || exit -1
 
-echo 'sh -c "(sleep 30 && nohup ~/.nutstore/dist/bin/nutstore-pydaemon.py >/dev/null 2>&1) &"' >> ~/.config/awesome/autorun.sh
+# Add to autostart.sh for awesome vm.
+echo "run nohup ~/.nutstore/dist/bin/nutstore-pydaemon.py >/dev/null 2>&1" >> ~/.config/awesome/autorun.sh
 
 sed -i "s|env\ python|env\ python2|g" ${DIST_DIR}/bin/nutstore-pydaemon.py || exit -1
 
