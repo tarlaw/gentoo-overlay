@@ -1,0 +1,360 @@
+From 8f006c39435ac7123d2a504f7cfe41b2ab197f89 Mon Sep 17 00:00:00 2001
+From: Daniel Micay <danielmicay@gmail.com>
+Date: Sun, 21 Jun 2015 09:50:26 -0400
+Subject: expose functions for pausing/unpausing output
+
+---
+ src/vte.cc            | 21 +++++++++++----------
+ src/vte/vteterminal.h |  4 ++++
+ 2 files changed, 15 insertions(+), 10 deletions(-)
+
+diff --git a/src/vte.cc b/src/vte.cc
+index 2b4619c..529c1a1 100644
+--- a/src/vte.cc
++++ b/src/vte.cc
+@@ -127,7 +127,6 @@ static char *vte_terminal_get_text_maybe_wrapped(VteTerminal *terminal,
+ 						 gpointer data,
+ 						 GArray *attributes,
+ 						 gboolean include_trailing_spaces);
+-static void _vte_terminal_disconnect_pty_read(VteTerminal *terminal);
+ static void _vte_terminal_disconnect_pty_write(VteTerminal *terminal);
+ static void vte_terminal_stop_processing (VteTerminal *terminal);
+ 
+@@ -3353,9 +3352,10 @@ static void mark_input_source_invalid(VteTerminal *terminal)
+ 	_vte_debug_print (VTE_DEBUG_IO, "removed poll of vte_terminal_io_read\n");
+ 	terminal->pvt->pty_input_source = 0;
+ }
+-static void
+-_vte_terminal_connect_pty_read(VteTerminal *terminal)
++void
++vte_terminal_connect_pty_read(VteTerminal *terminal)
+ {
++	g_return_if_fail(VTE_IS_TERMINAL(terminal));
+ 	if (terminal->pvt->pty_channel == NULL) {
+ 		return;
+ 	}
+@@ -3407,9 +3407,10 @@ _vte_terminal_connect_pty_write(VteTerminal *terminal)
+ 	}
+ }
+ 
+-static void
+-_vte_terminal_disconnect_pty_read(VteTerminal *terminal)
++void
++vte_terminal_disconnect_pty_read(VteTerminal *terminal)
+ {
++	g_return_if_fail(VTE_IS_TERMINAL(terminal));
+ 	if (terminal->pvt->pty_input_source != 0) {
+ 		_vte_debug_print (VTE_DEBUG_IO, "disconnecting poll of vte_terminal_io_read\n");
+ 		g_source_remove(terminal->pvt->pty_input_source);
+@@ -6717,7 +6718,7 @@ vte_terminal_start_selection(VteTerminal *terminal, long x, long y,
+         vte_terminal_extend_selection(terminal, x, y, FALSE, TRUE);
+ 
+ 	/* Temporarily stop caring about input from the child. */
+-	_vte_terminal_disconnect_pty_read(terminal);
++	vte_terminal_disconnect_pty_read(terminal);
+ }
+ 
+ static gboolean
+@@ -6734,7 +6735,7 @@ _vte_terminal_maybe_end_selection (VteTerminal *terminal)
+ 		terminal->pvt->selecting = FALSE;
+ 
+ 		/* Reconnect to input from the child if we paused it. */
+-		_vte_terminal_connect_pty_read(terminal);
++		vte_terminal_connect_pty_read(terminal);
+ 
+ 		return TRUE;
+ 	}
+@@ -8899,7 +8900,7 @@ vte_terminal_finalize(GObject *object)
+ #endif
+ 		kill(terminal->pvt->pty_pid, SIGHUP);
+ 	}
+-	_vte_terminal_disconnect_pty_read(terminal);
++	vte_terminal_disconnect_pty_read(terminal);
+ 	_vte_terminal_disconnect_pty_write(terminal);
+ 	if (terminal->pvt->pty_channel != NULL) {
+ 		g_io_channel_unref (terminal->pvt->pty_channel);
+@@ -12456,7 +12457,7 @@ vte_terminal_set_pty(VteTerminal *terminal,
+         g_object_freeze_notify(object);
+ 
+         if (pvt->pty != NULL) {
+-                _vte_terminal_disconnect_pty_read(terminal);
++                vte_terminal_disconnect_pty_read(terminal);
+                 _vte_terminal_disconnect_pty_write(terminal);
+ 
+                 if (terminal->pvt->pty_channel != NULL) {
+@@ -12510,7 +12511,7 @@ vte_terminal_set_pty(VteTerminal *terminal,
+         _vte_terminal_setup_utf8 (terminal);
+ 
+         /* Open channels to listen for input on. */
+-        _vte_terminal_connect_pty_read (terminal);
++        vte_terminal_connect_pty_read (terminal);
+ 
+         g_object_notify(object, "pty");
+ 
+diff --git a/src/vte/vteterminal.h b/src/vte/vteterminal.h
+index dbe3ffe..f9c95ed 100644
+--- a/src/vte/vteterminal.h
++++ b/src/vte/vteterminal.h
+@@ -176,6 +176,10 @@ void vte_terminal_paste_primary(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ void vte_terminal_select_all(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ void vte_terminal_unselect_all(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ 
++/* pause and unpause output */
++void vte_terminal_disconnect_pty_read(VteTerminal *vte);
++void vte_terminal_connect_pty_read(VteTerminal *vte);
++
+ /* By-word selection */
+ void vte_terminal_set_word_char_exceptions(VteTerminal *terminal,
+                                            const char *exceptions) _VTE_GNUC_NONNULL(1);
+-- 
+2.6.4
+
+
+From 234a9f074138750e0d20116593020690dba039de Mon Sep 17 00:00:00 2001
+From: Daniel Micay <danielmicay@gmail.com>
+Date: Sun, 21 Jun 2015 09:57:38 -0400
+Subject: expose function for setting the cursor position
+
+---
+ src/vte.cc            | 22 ++++++++++++++++++++++
+ src/vte/vteterminal.h |  2 ++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/src/vte.cc b/src/vte.cc
+index 529c1a1..3802b3c 100644
+--- a/src/vte.cc
++++ b/src/vte.cc
+@@ -6541,6 +6541,28 @@ vte_terminal_get_cursor_position(VteTerminal *terminal,
+ 	}
+ }
+ 
++/**
++ * vte_terminal_set_cursor_position:
++ * @terminal: a #VteTerminal
++ * @column: the new cursor column
++ * @row: the new cursor row
++ *
++ * Set the location of the cursor.
++ */
++void
++vte_terminal_set_cursor_position(VteTerminal *terminal,
++				 long column, long row)
++{
++	g_return_if_fail(VTE_IS_TERMINAL(terminal));
++
++	_vte_invalidate_cursor_once(terminal, FALSE);
++	terminal->pvt->cursor.col = column;
++	terminal->pvt->cursor.row = row;
++	_vte_invalidate_cursor_once(terminal, FALSE);
++	_vte_check_cursor_blink(terminal);
++	vte_terminal_queue_cursor_moved(terminal);
++}
++
+ /* Place the selected text onto the clipboard.  Do this asynchronously so that
+  * we get notified when the selection we placed on the clipboard is replaced. */
+ static void
+diff --git a/src/vte/vteterminal.h b/src/vte/vteterminal.h
+index f9c95ed..4a03a96 100644
+--- a/src/vte/vteterminal.h
++++ b/src/vte/vteterminal.h
+@@ -290,6 +290,8 @@ char *vte_terminal_get_text_range(VteTerminal *terminal,
+ void vte_terminal_get_cursor_position(VteTerminal *terminal,
+ 				      glong *column,
+                                       glong *row) _VTE_GNUC_NONNULL(1);
++void vte_terminal_set_cursor_position(VteTerminal *terminal,
++				      long column, long row) _VTE_GNUC_NONNULL(1);
+ 
+ /* Add a matching expression, returning the tag the widget assigns to that
+  * expression. */
+-- 
+2.6.4
+
+
+From c6647c056276ba7bbcb1f21f84200a82a99582d7 Mon Sep 17 00:00:00 2001
+From: Daniel Micay <danielmicay@gmail.com>
+Date: Sun, 21 Jun 2015 09:59:05 -0400
+Subject: add function for setting the text selection
+
+---
+ src/vte.cc            | 18 ++++++++++++++++++
+ src/vte/vteterminal.h |  3 +++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/src/vte.cc b/src/vte.cc
+index 3802b3c..fb0b6ef 100644
+--- a/src/vte.cc
++++ b/src/vte.cc
+@@ -7257,6 +7257,24 @@ vte_terminal_unselect_all(VteTerminal *terminal)
+ 	vte_terminal_deselect_all (terminal);
+ }
+ 
++
++/**
++ * vte_terminal_select_text:
++ * @terminal: a #VteTerminal
++ * @start_col: the starting column for the selection
++ * @start_row: the starting row for the selection
++ * @end_col: the end column for the selection
++ * @end_row: the end row for the selection
++ *
++ * Sets the current selection region.
++ */
++void
++vte_terminal_select_text(VteTerminal *terminal,
++			 long start_col, long start_row,
++			 long end_col, long end_row) {
++	_vte_terminal_select_text(terminal, start_col, start_row, end_col, end_row, 0, 0);
++}
++
+ /* Autoscroll a bit. */
+ static gboolean
+ vte_terminal_autoscroll(VteTerminal *terminal)
+diff --git a/src/vte/vteterminal.h b/src/vte/vteterminal.h
+index 4a03a96..08414df 100644
+--- a/src/vte/vteterminal.h
++++ b/src/vte/vteterminal.h
+@@ -175,6 +175,9 @@ void vte_terminal_paste_primary(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ 
+ void vte_terminal_select_all(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ void vte_terminal_unselect_all(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
++void vte_terminal_select_text(VteTerminal *terminal,
++                              long start_col, long start_row,
++                              long end_col, long end_row) _VTE_GNUC_NONNULL(1);
+ 
+ /* pause and unpause output */
+ void vte_terminal_disconnect_pty_read(VteTerminal *vte);
+-- 
+2.6.4
+
+
+From 3f4315422ecf613214316e3f3f407859a8c41e87 Mon Sep 17 00:00:00 2001
+From: Daniel Micay <danielmicay@gmail.com>
+Date: Sun, 21 Jun 2015 09:59:37 -0400
+Subject: add functions to get/set block selection mode
+
+---
+ src/vte.cc            | 26 ++++++++++++++++++++++++++
+ src/vte/vteterminal.h |  3 +++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/src/vte.cc b/src/vte.cc
+index fb0b6ef..cf5c3d2 100644
+--- a/src/vte.cc
++++ b/src/vte.cc
+@@ -7257,6 +7257,32 @@ vte_terminal_unselect_all(VteTerminal *terminal)
+ 	vte_terminal_deselect_all (terminal);
+ }
+ 
++/**
++ * vte_terminal_get_selection_block_mode:
++ * @terminal: a #VteTerminal
++ *
++ * Checks whether or not block selection is enabled.
++ *
++ * Returns: %TRUE if block selection is enabled, %FALSE if not
++ */
++gboolean
++vte_terminal_get_selection_block_mode(VteTerminal *terminal) {
++	g_return_val_if_fail(VTE_IS_TERMINAL(terminal), FALSE);
++	return terminal->pvt->selection_block_mode;
++}
++
++/**
++ * vte_terminal_set_selection_block_mode:
++ * @terminal: a #VteTerminal
++ * @block_mode: whether block selection is enabled
++ *
++ * Sets whether or not block selection is enabled.
++ */
++void
++vte_terminal_set_selection_block_mode(VteTerminal *terminal, gboolean block_mode) {
++	g_return_if_fail(VTE_IS_TERMINAL(terminal));
++	terminal->pvt->selection_block_mode = block_mode;
++}
+ 
+ /**
+  * vte_terminal_select_text:
+diff --git a/src/vte/vteterminal.h b/src/vte/vteterminal.h
+index 08414df..3cb5c71 100644
+--- a/src/vte/vteterminal.h
++++ b/src/vte/vteterminal.h
+@@ -175,6 +175,9 @@ void vte_terminal_paste_primary(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ 
+ void vte_terminal_select_all(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ void vte_terminal_unselect_all(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
++gboolean vte_terminal_get_selection_block_mode(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
++void vte_terminal_set_selection_block_mode(VteTerminal *terminal,
++                                           gboolean block_mode) _VTE_GNUC_NONNULL(1);
+ void vte_terminal_select_text(VteTerminal *terminal,
+                               long start_col, long start_row,
+                               long end_col, long end_row) _VTE_GNUC_NONNULL(1);
+-- 
+2.6.4
+
+
+From ff40e5dafa83a4bb394ee755e1a48922d32a3ca3 Mon Sep 17 00:00:00 2001
+From: Daniel Micay <danielmicay@gmail.com>
+Date: Sun, 21 Jun 2015 10:00:11 -0400
+Subject: expose function for getting the selected text
+
+---
+ src/vte.cc            | 2 +-
+ src/vte/vteterminal.h | 2 ++
+ src/vteaccess.cc      | 2 +-
+ src/vteint.h          | 1 -
+ 4 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/src/vte.cc b/src/vte.cc
+index cf5c3d2..bce5ce8 100644
+--- a/src/vte.cc
++++ b/src/vte.cc
+@@ -12610,7 +12610,7 @@ _vte_terminal_accessible_ref(VteTerminal *terminal)
+ }
+ 
+ char *
+-_vte_terminal_get_selection(VteTerminal *terminal)
++vte_terminal_get_selection(VteTerminal *terminal)
+ {
+ 	g_return_val_if_fail(VTE_IS_TERMINAL(terminal), NULL);
+ 
+diff --git a/src/vte/vteterminal.h b/src/vte/vteterminal.h
+index 3cb5c71..72fc362 100644
+--- a/src/vte/vteterminal.h
++++ b/src/vte/vteterminal.h
+@@ -181,6 +181,8 @@ void vte_terminal_set_selection_block_mode(VteTerminal *terminal,
+ void vte_terminal_select_text(VteTerminal *terminal,
+                               long start_col, long start_row,
+                               long end_col, long end_row) _VTE_GNUC_NONNULL(1);
++char *
++vte_terminal_get_selection(VteTerminal *terminal) _VTE_GNUC_NONNULL(1);
+ 
+ /* pause and unpause output */
+ void vte_terminal_disconnect_pty_read(VteTerminal *vte);
+diff --git a/src/vteaccess.cc b/src/vteaccess.cc
+index c5c6414..5c14bcb 100644
+--- a/src/vteaccess.cc
++++ b/src/vteaccess.cc
+@@ -1441,7 +1441,7 @@ vte_terminal_accessible_get_selection(AtkText *text, gint selection_number,
+ 	*start_offset = offset_from_xy (priv, start_x, start_y);
+ 	_vte_terminal_get_end_selection (terminal, &end_x, &end_y);
+ 	*end_offset = offset_from_xy (priv, end_x, end_y);
+-	return _vte_terminal_get_selection (terminal);
++	return vte_terminal_get_selection (terminal);
+ }
+ 
+ static gboolean
+diff --git a/src/vteint.h b/src/vteint.h
+index 7f57eb1..e0a3bec 100644
+--- a/src/vteint.h
++++ b/src/vteint.h
+@@ -24,7 +24,6 @@
+ G_BEGIN_DECLS
+ 
+ void _vte_terminal_accessible_ref(VteTerminal *terminal);
+-char* _vte_terminal_get_selection(VteTerminal *terminal);
+ void _vte_terminal_get_start_selection(VteTerminal *terminal, long *x, long *y);
+ void _vte_terminal_get_end_selection(VteTerminal *terminal, long *x, long *y);
+ void _vte_terminal_select_text(VteTerminal *terminal, long start_x, long start_y, long end_x, long end_y, int start_offset, int end_offset);
+-- 
+2.6.4
+
